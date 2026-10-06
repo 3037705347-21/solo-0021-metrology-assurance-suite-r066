@@ -84,6 +84,66 @@ func (s *Server) reopenCase(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, view)
 }
 
+func (s *Server) recordCorrectiveAction(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.RecordCorrectiveActionRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.RecordCorrectiveAction(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceID"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, view)
+}
+
+func (s *Server) dispositionNonconformance(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.DispositionNonconformanceRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.DispositionNonconformance(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceID"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
+func (s *Server) revokeCorrectiveAction(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.RevokeCorrectiveActionRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.RevokeCorrectiveAction(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceID"), request.PathValue("actionID"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
+func (s *Server) nonconformances(writer http.ResponseWriter, request *http.Request) {
+	view, err := s.service.Nonconformances(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
+func (s *Server) nonconformance(writer http.ResponseWriter, request *http.Request) {
+	view, err := s.service.Nonconformance(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceID"))
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
 func (s *Server) sealCase(writer http.ResponseWriter, request *http.Request) {
 	input, err := decodeJSON[contracts.SealCaseRequest](writer, request)
 	if err != nil {

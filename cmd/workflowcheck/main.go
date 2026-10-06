@@ -35,11 +35,12 @@ func main() {
 	flag.Parse()
 
 	checks := map[string]func() error{
-		"register-device":          checkRegisterDevice,
-		"open-verification-case":   checkOpenVerificationCase,
-		"record-measurement":       checkRecordMeasurement,
-		"reopen-verification-case": checkReopenVerificationCase,
-		"seal-verification":        checkSealVerification,
+		"register-device":                  checkRegisterDevice,
+		"open-verification-case":           checkOpenVerificationCase,
+		"record-measurement":               checkRecordMeasurement,
+		"reopen-verification-case":         checkReopenVerificationCase,
+		"nonconformance-corrective-action": checkNonconformanceCorrectiveAction,
+		"seal-verification":                checkSealVerification,
 	}
 	run, ok := checks[*workflow]
 	if !ok {
@@ -252,9 +253,39 @@ func checkReopenVerificationCase() error {
 	if err != nil {
 		return err
 	}
-	reopened, err := h.request(http.MethodPost, "/cases/"+caseID+"/reopen", map[string]any{
+
+	blocked, err := h.request(http.MethodPost, "/cases/"+caseID+"/reopen", map[string]any{
 		"actor":  "Lin",
 		"reason": "measurement setup was replaced",
+	})
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(blocked, http.StatusConflict); err != nil {
+		return err
+	}
+	if err := expectErrorCode(blocked, "state_conflict"); err != nil {
+		return err
+	}
+
+	ncID, err := h.onlyNonconformanceID(caseID)
+	if err != nil {
+		return err
+	}
+	if _, err := h.recordAction(caseID, ncID, "Rui", "replaced the fixture and re-zeroed the instrument", "setup sheet SOP-7"); err != nil {
+		return err
+	}
+	dispositioned, err := h.disposition(caseID, ncID, "Mira", "fixture replacement verified against SOP-7")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(dispositioned, http.StatusOK); err != nil {
+		return err
+	}
+
+	reopened, err := h.request(http.MethodPost, "/cases/"+caseID+"/reopen", map[string]any{
+		"actor":  "Lin",
+		"reason": "disposition complete, re-measurement authorized",
 	})
 	if err != nil {
 		return err
@@ -300,6 +331,313 @@ func checkReopenVerificationCase() error {
 	}
 	if !hasEvent(events.Body, "case_reopened") {
 		return errors.New("reopen audit event is missing")
+	}
+	if !hasEvent(events.Body, "nonconformance_dispositioned") {
+		return errors.New("disposition audit event is missing")
+	}
+	return nil
+}
+
+func checkNonconformanceCorrectiveAction() error {
+	h := newHarness()
+	defer h.close()
+
+	caseID, err := h.rejectedCase("MET-1501")
+	if err != nil {
+		return err
+	}
+	view, err := h.request(http.MethodGet, "/cases/"+caseID, nil)
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(view, http.StatusOK); err != nil {
+		return err
+	}
+	ncID, err := h.onlyNonconformanceID(caseID)
+	if err != nil {
+		return err
+	}
+	failedID, err := nestedAnyString(view.Body, "measurements", 0, "id")
+	if err != nil {
+		return err
+	}
+	linkedID, err := nestedAnyString(view.Body, "nonconformances", 0, "nonconformance", "measurement_id")
+	if err != nil {
+		return err
+	}
+	if linkedID != failedID {
+		return fmt.Errorf("nonconformance references measurement %q, expected failed measurement %q", linkedID, failedID)
+	}
+	ncStatus, err := nestedAnyString(view.Body, "nonconformances", 0, "nonconformance", "status")
+	if err != nil {
+		return err
+	}
+	if ncStatus != "open" {
+		return fmt.Errorf("nonconformance status = %q, expected open", ncStatus)
+	}
+
+	missingRationale, err := h.request(http.MethodPost, "/cases/"+caseID+"/nonconformances/"+ncID+"/actions", map[string]any{
+		"actor":  "Rui",
+		"action": "recalibrated the probe",
+	})
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(missingRationale, http.StatusBadRequest); err != nil {
+		return err
+	}
+	if err := expectErrorCode(missingRationale, "invalid_input"); err != nil {
+		return err
+	}
+
+	recorded, err := h.recordAction(caseID, ncID, "Rui", "recalibrated the probe", "calibration certificate CAL-44")
+	if err != nil {
+		return err
+	}
+	actionID, err := nestedAnyString(recorded.Body, "nonconformances", 0, "actions", 0, "id")
+	if err != nil {
+		return err
+	}
+	actionStatus, err := nestedAnyString(recorded.Body, "nonconformances", 0, "actions", 0, "status")
+	if err != nil {
+		return err
+	}
+	if actionStatus != "active" {
+		return fmt.Errorf("corrective action status = %q, expected active", actionStatus)
+	}
+
+	revoked, err := h.revoke(caseID, ncID, actionID, "Mira", "action named the wrong instrument")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(revoked, http.StatusOK); err != nil {
+		return err
+	}
+	revokedStatus, err := nestedAnyString(revoked.Body, "nonconformances", 0, "actions", 0, "status")
+	if err != nil {
+		return err
+	}
+	if revokedStatus != "revoked" {
+		return fmt.Errorf("revoked action status = %q", revokedStatus)
+	}
+	keptAction, err := nestedAnyString(revoked.Body, "nonconformances", 0, "actions", 0, "action")
+	if err != nil {
+		return err
+	}
+	if keptAction != "recalibrated the probe" {
+		return fmt.Errorf("revocation rewrote the original action: %q", keptAction)
+	}
+
+	duplicateRevoke, err := h.revoke(caseID, ncID, actionID, "Mira", "duplicate revoke")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(duplicateRevoke, http.StatusConflict); err != nil {
+		return err
+	}
+	if err := expectErrorCode(duplicateRevoke, "state_conflict"); err != nil {
+		return err
+	}
+
+	noActive, err := h.disposition(caseID, ncID, "Mira", "all actions revoked")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(noActive, http.StatusConflict); err != nil {
+		return err
+	}
+	if err := expectErrorCode(noActive, "state_conflict"); err != nil {
+		return err
+	}
+
+	if _, err := h.recordAction(caseID, ncID, "Rui", "replaced the fixture and re-zeroed the instrument", "setup sheet SOP-7"); err != nil {
+		return err
+	}
+
+	emptyBasis, err := h.disposition(caseID, ncID, "Mira", "  ")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(emptyBasis, http.StatusBadRequest); err != nil {
+		return err
+	}
+	if err := expectErrorCode(emptyBasis, "invalid_input"); err != nil {
+		return err
+	}
+
+	type outcome struct {
+		response apiResponse
+		err      error
+	}
+	results := make(chan outcome, 2)
+	var wait sync.WaitGroup
+	for index := 0; index < 2; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			response, err := h.disposition(caseID, ncID, fmt.Sprintf("Reviewer-%d", index+1), "disposition basis per SOP-7")
+			results <- outcome{response: response, err: err}
+		}(index)
+	}
+	wait.Wait()
+	close(results)
+	successes := 0
+	conflicts := 0
+	for item := range results {
+		if item.err != nil {
+			return item.err
+		}
+		switch item.response.Status {
+		case http.StatusOK:
+			successes++
+		case http.StatusConflict:
+			conflicts++
+		default:
+			return fmt.Errorf("unexpected concurrent disposition status %d: %s", item.response.Status, item.response.Raw)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		return fmt.Errorf("concurrent disposition outcomes: %d success, %d conflict", successes, conflicts)
+	}
+
+	duplicateDisposition, err := h.disposition(caseID, ncID, "Mira", "duplicate disposition")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(duplicateDisposition, http.StatusConflict); err != nil {
+		return err
+	}
+	if err := expectErrorCode(duplicateDisposition, "state_conflict"); err != nil {
+		return err
+	}
+
+	lateRevoke, err := h.revoke(caseID, ncID, actionID, "Mira", "revoke after disposition")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(lateRevoke, http.StatusConflict); err != nil {
+		return err
+	}
+	if err := expectErrorCode(lateRevoke, "state_conflict"); err != nil {
+		return err
+	}
+
+	reopened, err := h.request(http.MethodPost, "/cases/"+caseID+"/reopen", map[string]any{
+		"actor":  "Lin",
+		"reason": "disposition complete, re-measurement authorized",
+	})
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(reopened, http.StatusOK); err != nil {
+		return err
+	}
+
+	passed, err := h.recordMeasurement(caseID, 25.1, "Rui")
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(passed, http.StatusCreated); err != nil {
+		return err
+	}
+	link, err := nestedAnyString(passed.Body, "measurements", 1, "nonconformance_id")
+	if err != nil {
+		return err
+	}
+	if link != ncID {
+		return fmt.Errorf("re-measurement linked to nonconformance %q, expected %q", link, ncID)
+	}
+	passedState, err := nestedString(passed.Body, "case", "state")
+	if err != nil {
+		return err
+	}
+	if passedState != "review_ready" {
+		return fmt.Errorf("case state after re-measurement = %q", passedState)
+	}
+
+	sealed, err := h.request(http.MethodPost, "/cases/"+caseID+"/seal", map[string]any{
+		"reviewer": "Mira",
+		"summary":  "disposition loop closed and accepted measurement sealed",
+	})
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(sealed, http.StatusCreated); err != nil {
+		return err
+	}
+
+	final, err := h.request(http.MethodGet, "/cases/"+caseID, nil)
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(final, http.StatusOK); err != nil {
+		return err
+	}
+	failedAccepted, err := nestedBool(final.Body, "measurements", 0, "accepted")
+	if err != nil {
+		return err
+	}
+	if failedAccepted {
+		return errors.New("original failed measurement was rewritten as accepted")
+	}
+	deviation, err := nestedNumber(final.Body, "measurements", 0, "deviation")
+	if err != nil {
+		return err
+	}
+	if deviation != 1.5 {
+		return fmt.Errorf("original failed measurement deviation = %v, expected 1.5", deviation)
+	}
+	firstMeasurement, err := nestedAny(final.Body, "measurements", 0)
+	if err != nil {
+		return err
+	}
+	if _, ok := firstMeasurement.(map[string]any)["nonconformance_id"]; ok {
+		return errors.New("original failed measurement gained a nonconformance link")
+	}
+	if _, err := nestedString(final.Body, "seal", "id"); err != nil {
+		return err
+	}
+
+	list, err := h.request(http.MethodGet, "/cases/"+caseID+"/nonconformances", nil)
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(list, http.StatusOK); err != nil {
+		return err
+	}
+	entries, err := nestedSlice(list.Body, "nonconformances")
+	if err != nil {
+		return err
+	}
+	if len(entries) != 1 {
+		return fmt.Errorf("nonconformance list has %d entries, expected 1", len(entries))
+	}
+	single, err := h.request(http.MethodGet, "/cases/"+caseID+"/nonconformances/"+ncID, nil)
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(single, http.StatusOK); err != nil {
+		return err
+	}
+	singleStatus, err := nestedAnyString(single.Body, "nonconformance", "status")
+	if err != nil {
+		return err
+	}
+	if singleStatus != "dispositioned" {
+		return fmt.Errorf("disposition record status = %q", singleStatus)
+	}
+
+	events, err := h.request(http.MethodGet, "/cases/"+caseID+"/events", nil)
+	if err != nil {
+		return err
+	}
+	if err := expectStatus(events, http.StatusOK); err != nil {
+		return err
+	}
+	for _, kind := range []string{"nonconformance_opened", "corrective_action_recorded", "corrective_action_revoked", "nonconformance_dispositioned"} {
+		if !hasEvent(events.Body, kind) {
+			return fmt.Errorf("audit event %s is missing", kind)
+		}
 	}
 	return nil
 }
@@ -463,6 +801,53 @@ func (h *harness) recordMeasurement(caseID string, observed float64, technician 
 	})
 }
 
+func (h *harness) onlyNonconformanceID(caseID string) (string, error) {
+	view, err := h.request(http.MethodGet, "/cases/"+caseID, nil)
+	if err != nil {
+		return "", err
+	}
+	if err := expectStatus(view, http.StatusOK); err != nil {
+		return "", err
+	}
+	entries, err := nestedSlice(view.Body, "nonconformances")
+	if err != nil {
+		return "", err
+	}
+	if len(entries) != 1 {
+		return "", fmt.Errorf("case %s has %d nonconformances, expected 1", caseID, len(entries))
+	}
+	return nestedAnyString(view.Body, "nonconformances", 0, "nonconformance", "id")
+}
+
+func (h *harness) recordAction(caseID, nonconformanceID, actor, action, rationale string) (apiResponse, error) {
+	response, err := h.request(http.MethodPost, "/cases/"+caseID+"/nonconformances/"+nonconformanceID+"/actions", map[string]any{
+		"actor":     actor,
+		"action":    action,
+		"rationale": rationale,
+	})
+	if err != nil {
+		return apiResponse{}, err
+	}
+	if err := expectStatus(response, http.StatusCreated); err != nil {
+		return apiResponse{}, err
+	}
+	return response, nil
+}
+
+func (h *harness) disposition(caseID, nonconformanceID, reviewer, basis string) (apiResponse, error) {
+	return h.request(http.MethodPost, "/cases/"+caseID+"/nonconformances/"+nonconformanceID+"/disposition", map[string]any{
+		"reviewer": reviewer,
+		"basis":    basis,
+	})
+}
+
+func (h *harness) revoke(caseID, nonconformanceID, actionID, actor, reason string) (apiResponse, error) {
+	return h.request(http.MethodPost, "/cases/"+caseID+"/nonconformances/"+nonconformanceID+"/actions/"+actionID+"/revoke", map[string]any{
+		"actor":  actor,
+		"reason": reason,
+	})
+}
+
 func (h *harness) rejectedCase(tag string) (string, error) {
 	deviceID, err := h.createDevice(tag)
 	if err != nil {
@@ -549,6 +934,30 @@ func nestedBool(root map[string]any, path ...any) (bool, error) {
 		return false, fmt.Errorf("%v is not a boolean", path)
 	}
 	return flag, nil
+}
+
+func nestedNumber(root map[string]any, path ...any) (float64, error) {
+	value, err := nestedAny(root, path...)
+	if err != nil {
+		return 0, err
+	}
+	number, ok := value.(float64)
+	if !ok {
+		return 0, fmt.Errorf("%v is not a number", path)
+	}
+	return number, nil
+}
+
+func nestedAnyString(root map[string]any, path ...any) (string, error) {
+	value, err := nestedAny(root, path...)
+	if err != nil {
+		return "", err
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%v is not a string", path)
+	}
+	return text, nil
 }
 
 func nestedSlice(root map[string]any, key string) ([]any, error) {

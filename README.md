@@ -2,8 +2,9 @@
 
 Metrology Assurance Suite is a Go HTTP service for bounded laboratory
 measurement assurance work. It registers devices, opens verification cases,
-records measurements, handles failed tolerance decisions, and seals traceable
-evidence records.
+records measurements, opens a nonconformance disposition record for failed
+tolerance decisions, tracks corrective actions and the review basis, and seals
+traceable evidence records.
 
 ## Run
 
@@ -21,6 +22,7 @@ go run ./cmd/workflowcheck --workflow register-device
 go run ./cmd/workflowcheck --workflow open-verification-case
 go run ./cmd/workflowcheck --workflow record-measurement
 go run ./cmd/workflowcheck --workflow reopen-verification-case
+go run ./cmd/workflowcheck --workflow nonconformance-corrective-action
 go run ./cmd/workflowcheck --workflow seal-verification
 ```
 
@@ -42,6 +44,21 @@ or extend these smoke checks with red/green verification tests.
 - `POST /cases/{id}/reopen`
 - `POST /cases/{id}/seal`
 - `GET /cases/{id}/events`
+- `GET /cases/{id}/nonconformances`
+- `GET /cases/{id}/nonconformances/{ncID}`
+- `POST /cases/{id}/nonconformances/{ncID}/actions`
+- `POST /cases/{id}/nonconformances/{ncID}/disposition`
+- `POST /cases/{id}/nonconformances/{ncID}/actions/{actionID}/revoke`
+
+An out-of-tolerance measurement moves the case to `recheck_required` and opens
+a nonconformance bound to the failed measurement. The technician records
+corrective actions with their rationale, and the verifier dispositions the
+nonconformance with a review basis once at least one action is active. Only
+then can the case reopen; the next measurement is linked to the
+nonconformance it closes, so the passing value is provably the result of the
+same disposition loop. Revoking an invalid action marks it `revoked` without
+erasing it, and none of these steps can rewrite the original failed
+measurement or a sealed case.
 
 ## Layout
 
