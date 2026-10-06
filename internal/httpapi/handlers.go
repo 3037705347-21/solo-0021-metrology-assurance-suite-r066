@@ -106,3 +106,54 @@ func (s *Server) events(writer http.ResponseWriter, request *http.Request) {
 	}
 	writeJSON(writer, http.StatusOK, contracts.EventsResponse{Events: view.Events})
 }
+
+func (s *Server) nonconformances(writer http.ResponseWriter, request *http.Request) {
+	view, err := s.service.Nonconformances(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
+func (s *Server) submitCorrectiveAction(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.SubmitCorrectiveActionRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.SubmitCorrectiveAction(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceId"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, view)
+}
+
+func (s *Server) verifyCorrectiveAction(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.VerifyCorrectiveActionRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.VerifyCorrectiveAction(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceId"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}
+
+func (s *Server) revokeCorrectiveAction(writer http.ResponseWriter, request *http.Request) {
+	input, err := decodeJSON[contracts.RevokeCorrectiveActionRequest](writer, request)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	view, err := s.service.RevokeCorrectiveAction(request.Context(), request.PathValue("id"), request.PathValue("nonconformanceId"), input)
+	if err != nil {
+		writeError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view)
+}

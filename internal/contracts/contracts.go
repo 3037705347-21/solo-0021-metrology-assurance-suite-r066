@@ -31,15 +31,40 @@ type SealCaseRequest struct {
 	Summary  string `json:"summary"`
 }
 
+type SubmitCorrectiveActionRequest struct {
+	Technician string `json:"technician"`
+	Action     string `json:"action"`
+}
+
+type VerifyCorrectiveActionRequest struct {
+	Reviewer string `json:"reviewer"`
+	Basis    string `json:"basis"`
+}
+
+type RevokeCorrectiveActionRequest struct {
+	Reviewer string `json:"reviewer"`
+	Reason   string `json:"reason"`
+}
+
 type DeviceResponse struct {
 	Device domain.Device `json:"device"`
 }
 
+type NonconformanceResponse struct {
+	Nonconformance    domain.Nonconformance     `json:"nonconformance"`
+	CorrectiveActions []domain.CorrectiveAction `json:"corrective_actions"`
+}
+
 type CaseResponse struct {
-	Case         domain.VerificationCase `json:"case"`
-	Measurements []domain.Measurement    `json:"measurements"`
-	Seal         *domain.EvidenceSeal    `json:"seal,omitempty"`
-	Events       []domain.AuditEvent     `json:"events"`
+	Case            domain.VerificationCase  `json:"case"`
+	Measurements    []domain.Measurement     `json:"measurements"`
+	Nonconformances []NonconformanceResponse `json:"nonconformances"`
+	Seal            *domain.EvidenceSeal     `json:"seal,omitempty"`
+	Events          []domain.AuditEvent      `json:"events"`
+}
+
+type NonconformancesResponse struct {
+	Nonconformances []NonconformanceResponse `json:"nonconformances"`
 }
 
 type EventsResponse struct {

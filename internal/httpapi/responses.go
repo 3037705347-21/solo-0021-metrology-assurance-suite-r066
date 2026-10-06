@@ -58,6 +58,10 @@ func errorStatus(err error) (int, string) {
 		return http.StatusConflict, "active_case_exists"
 	case errors.Is(err, domain.ErrSealAlreadyCreated):
 		return http.StatusConflict, "seal_exists"
+	case errors.Is(err, domain.ErrCorrectiveActionExists):
+		return http.StatusConflict, "corrective_action_exists"
+	case errors.Is(err, domain.ErrDispositionIncomplete):
+		return http.StatusConflict, "disposition_incomplete"
 	case errors.Is(err, domain.ErrStateConflict):
 		return http.StatusConflict, "state_conflict"
 	default:

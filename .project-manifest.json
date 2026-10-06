@@ -97,11 +97,12 @@
       "steps": [
         "load the waiting case and compute signed deviation",
         "accept an in-tolerance measurement or require a repeat",
-        "commit the measurement and case transition together"
+        "open a nonconformance for an out-of-tolerance measurement",
+        "commit the measurement, disposition record, and case transition together"
       ],
       "success": "returns a review_ready or recheck_required case",
       "failure": "returns conflict when the case is not awaiting measurement",
-      "verification": "workflowcheck records both accepted and rejected measurements",
+      "verification": "workflowcheck records both accepted and rejected measurements and checks the opened nonconformance",
       "module_ids": [
         "runtimecheck",
         "httpapi",
@@ -118,12 +119,37 @@
       "entry": "POST /cases/{id}/reopen",
       "steps": [
         "verify the case is in recheck_required",
+        "require a verified corrective action on the open nonconformance",
+        "close the nonconformance and mark it as the pending disposition loop",
         "record the actor and reason",
         "return the case to awaiting_measurement"
       ],
-      "success": "returns the reopened case and a new audit event",
-      "failure": "returns conflict for any other case state",
-      "verification": "workflowcheck fails a measurement, reopens the case, and rejects a second reopen",
+      "success": "returns the reopened case and new audit events",
+      "failure": "returns conflict for any other case state or an unverified disposition",
+      "verification": "workflowcheck fails a measurement, verifies the disposition, reopens the case, and rejects a second reopen",
+      "module_ids": [
+        "runtimecheck",
+        "httpapi",
+        "assurance",
+        "domain",
+        "repository",
+        "contracts",
+        "bootstrap"
+      ]
+    },
+    {
+      "id": "corrective-action-disposition",
+      "name": "Disposition nonconformance",
+      "entry": "POST /cases/{id}/nonconformances/{ncid}/actions",
+      "steps": [
+        "record the technician corrective action on an open nonconformance",
+        "reject repeated or concurrent submissions for the same loop",
+        "verify the action with a reviewer basis or revoke it with a reason",
+        "keep revoked actions and the failed measurement immutable"
+      ],
+      "success": "returns the case view with the disposition record and audit events",
+      "failure": "returns conflict for duplicate, concurrent, or frozen disposition changes",
+      "verification": "workflowcheck races two submissions, revokes and resubmits an action, and proves the failed measurement and sealed facts are preserved",
       "module_ids": [
         "runtimecheck",
         "httpapi",

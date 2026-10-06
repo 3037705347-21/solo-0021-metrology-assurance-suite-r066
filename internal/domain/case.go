@@ -17,16 +17,17 @@ const (
 )
 
 type VerificationCase struct {
-	ID        string     `json:"id"`
-	DeviceID  string     `json:"device_id"`
-	Nominal   float64    `json:"nominal"`
-	Tolerance float64    `json:"tolerance"`
-	Steward   string     `json:"steward"`
-	State     CaseState  `json:"state"`
-	Version   int        `json:"version"`
-	OpenedAt  time.Time  `json:"opened_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	SealedAt  *time.Time `json:"sealed_at,omitempty"`
+	ID                      string     `json:"id"`
+	DeviceID                string     `json:"device_id"`
+	Nominal                 float64    `json:"nominal"`
+	Tolerance               float64    `json:"tolerance"`
+	Steward                 string     `json:"steward"`
+	State                   CaseState  `json:"state"`
+	Version                 int        `json:"version"`
+	PendingNonconformanceID string     `json:"pending_nonconformance_id,omitempty"`
+	OpenedAt                time.Time  `json:"opened_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+	SealedAt                *time.Time `json:"sealed_at,omitempty"`
 }
 
 func NewVerificationCase(id, deviceID string, nominal, tolerance float64, steward string, at time.Time) (VerificationCase, error) {

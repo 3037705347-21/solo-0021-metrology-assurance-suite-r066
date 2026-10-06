@@ -2,7 +2,8 @@
 
 Metrology Assurance Suite is a Go HTTP service for bounded laboratory
 measurement assurance work. It registers devices, opens verification cases,
-records measurements, handles failed tolerance decisions, and seals traceable
+records measurements, opens traceable nonconformance dispositions with
+corrective actions for failed tolerance decisions, and seals traceable
 evidence records.
 
 ## Run
@@ -22,6 +23,7 @@ go run ./cmd/workflowcheck --workflow open-verification-case
 go run ./cmd/workflowcheck --workflow record-measurement
 go run ./cmd/workflowcheck --workflow reopen-verification-case
 go run ./cmd/workflowcheck --workflow seal-verification
+go run ./cmd/workflowcheck --workflow corrective-action-disposition
 ```
 
 The workflow runner starts a fresh in-process HTTP service and exercises the
@@ -42,6 +44,17 @@ or extend these smoke checks with red/green verification tests.
 - `POST /cases/{id}/reopen`
 - `POST /cases/{id}/seal`
 - `GET /cases/{id}/events`
+- `GET /cases/{id}/nonconformances`
+- `POST /cases/{id}/nonconformances/{ncid}/actions`
+- `POST /cases/{id}/nonconformances/{ncid}/verify`
+- `POST /cases/{id}/nonconformances/{ncid}/revoke`
+
+An out-of-tolerance measurement opens a nonconformance linked to the failed
+measurement. The technician submits a corrective action, the quality verifier
+verifies it with a basis or revokes it with a reason, and the case can reopen
+only after a verified disposition. The follow-up measurement references the
+nonconformance it closes, so reviewers can prove a later pass belongs to the
+same disposition loop.
 
 ## Layout
 

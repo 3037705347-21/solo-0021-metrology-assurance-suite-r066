@@ -7,15 +7,16 @@ import (
 )
 
 type Measurement struct {
-	ID         string    `json:"id"`
-	CaseID     string    `json:"case_id"`
-	Observed   float64   `json:"observed"`
-	Nominal    float64   `json:"nominal"`
-	Deviation  float64   `json:"deviation"`
-	Tolerance  float64   `json:"tolerance"`
-	Accepted   bool      `json:"accepted"`
-	Technician string    `json:"technician"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	CaseID           string    `json:"case_id"`
+	Observed         float64   `json:"observed"`
+	Nominal          float64   `json:"nominal"`
+	Deviation        float64   `json:"deviation"`
+	Tolerance        float64   `json:"tolerance"`
+	Accepted         bool      `json:"accepted"`
+	Technician       string    `json:"technician"`
+	NonconformanceID string    `json:"nonconformance_id,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 func NewMeasurement(id, caseID string, observed, nominal, tolerance float64, technician string, at time.Time) (Measurement, error) {
